@@ -25,7 +25,6 @@ use Magento\Framework\GraphQl\Query\Resolver\Value;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Framework\Phrase;
-use Magento\Quote\Api\CartItemRepositoryInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Model\QuoteIdMaskFactory;
 use Magento\Quote\Model\ResourceModel\Quote\QuoteIdMask;
@@ -36,8 +35,6 @@ use Magento\ConfigurableProduct\Model\Product\Type\Configurable;
 use Magento\Bundle\Model\Product\Type;
 use Magento\Framework\DataObject;
 use Magento\Catalog\Model\Product\Attribute\Repository;
-use Magento\CatalogInventory\Api\StockStatusRepositoryInterface;
-use Magento\Quote\Api\Data\CartItemInterface;
 
 /**
  * Class SaveCartItem
@@ -74,16 +71,6 @@ class SaveCartItem implements ResolverInterface
      * @var QuoteIdMask
      */
     protected $quoteIdMaskResource;
-    
-    /**
-     * @var Configurable
-     */
-    protected $configurableType;
-
-    /**
-     * @var StockStatusRepositoryInterface
-     */
-    protected $stockStatusRepository;
 
     /**
      * SaveCartItem constructor.
@@ -101,8 +88,7 @@ class SaveCartItem implements ResolverInterface
         ProductRepository $productRepository,
         Repository $attributeRepository,
         QuoteIdMask $quoteIdMaskResource,
-        Configurable $configurableType,
-        StockStatusRepositoryInterface $stockStatusRepository
+        Configurable $configurableType
     )
     {
         $this->quoteIdMaskFactory = $quoteIdMaskFactory;
@@ -112,7 +98,6 @@ class SaveCartItem implements ResolverInterface
         $this->attributeRepository = $attributeRepository;
         $this->quoteIdMaskResource = $quoteIdMaskResource;
         $this->configurableType = $configurableType;
-        $this->stockStatusRepository = $stockStatusRepository;
     }
     
     /**
@@ -244,7 +229,6 @@ class SaveCartItem implements ResolverInterface
         $itemId = $this->getItemId($requestCartItem);
         if ($itemId) {
             $cartItem = $quote->getItemById($itemId);
-            $this->checkItemQty($cartItem, $qty);
 
             $cartItem->setQty($qty);
             $this->quoteRepository->save($quote);
@@ -275,29 +259,6 @@ class SaveCartItem implements ResolverInterface
         }
         
         return [];
-    }
-
-    protected function checkItemQty(CartItemInterface $cartItem, $qty): void
-    {
-        $product = $cartItem->getProduct();
-
-        if ($cartItem->getProductType() === Configurable::TYPE_CODE) {
-            $attributesInfo = $cartItem->getBuyRequest()->getDataByKey('super_attribute');
-            $product = $this->configurableType->getProductByAttributes($attributesInfo, $product);
-        }
-
-        $stockStatus = $this->stockStatusRepository->get($product->getId());
-        $stockItem = $stockStatus->getStockItem();
-
-        // return if stock is not managed
-        if (!$stockItem->getManageStock()) return;
-        
-        $fitsInStock = $qty <= $stockItem->getQty();
-        $isInMinMaxSaleRange = $qty >= $stockItem->getMinSaleQty() || $qty <= $stockItem->getMaxSaleQty();
-
-        if (!($fitsInStock && $isInMinMaxSaleRange)) {
-            throw new GraphQlInputException(new Phrase('Provided quantity exceeds stock limits'));
-        }
     }
 
     /**
